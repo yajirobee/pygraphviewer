@@ -58,23 +58,23 @@ class MainMenuBar(wx.MenuBar):
         self.Append(windowmenu, '&Window')
         self.Append(optionmenu, '&Option')
 
-    def OnOpenDir(self, event):
+    def OnOpenDir(self, evt):
         dlg = wx.DirDialog(self, "Choose a Directory", style = wx.DD_DEFAULT_STYLE)
         if dlg.ShowModal() == wx.ID_OK:
             pub.sendMessage(PT.TPC_OPENDIR, path = dlg.GetPath())
         dlg.Destroy()
 
-    def OnAddTab(self, event):
+    def OnAddTab(self, evt):
         pub.sendMessage(PT.TPC_ADDTAB)
 
-    def OnSplitVertical(self, event):
+    def OnSplitVertical(self, evt):
         pub.sendMessage(PT.TPC_SPLIT_VERTICAL)
 
-    def OnSplitHorizontal(self, event):
+    def OnSplitHorizontal(self, evt):
         pub.sendMessage(PT.TPC_SPLIT_HORIZONTAL)
 
-    def SetKeepRatio(self, event):
-        pub.sendMessage(PT.TPC_KEEPRATIO, keepratio = event.IsChecked())
+    def SetKeepRatio(self, evt):
+        pub.sendMessage(PT.TPC_KEEPRATIO, keepratio = evt.IsChecked())
 
 class SourceTree(wx.TreeCtrl):
     class SourceTreeMenu(wx.Menu):
@@ -90,10 +90,10 @@ class SourceTree(wx.TreeCtrl):
             self.Bind(wx.EVT_MENU, self.OnReload, id = 1001)
             self.Bind(wx.EVT_MENU, self.OnDeleteNode, id = 1002)
 
-        def OnReload(self, event):
+        def OnReload(self, evt):
             self.parent.Reload()
 
-        def OnDeleteNode(self, event):
+        def OnDeleteNode(self, evt):
             self.parent.DeleteNode(self.itemID)
 
     def __init__(self, parent, size = (200, 400)):
@@ -106,15 +106,15 @@ class SourceTree(wx.TreeCtrl):
         pub.subscribe(self.AddRootChild, PT.TPC_OPENDIR)
         self.rootID = self.AddRoot("root")
 
-    def OnRightClick(self, event):
-        itemID = event.GetItem()
+    def OnRightClick(self, evt):
+        itemID = evt.GetItem()
         if not itemID.IsOk(): itemID = self.GetSelection()
         menu = self.SourceTreeMenu(self, itemID)
         self.PopupMenu(menu)
         menu.Destroy()
 
-    def OnSelectionChanged(self, event):
-        itemID = event.GetItem()
+    def OnSelectionChanged(self, evt):
+        itemID = evt.GetItem()
         path = ""
         if itemID.IsOk():
             path = self.GetPyData(itemID)
@@ -131,14 +131,14 @@ class SourceTree(wx.TreeCtrl):
     def DeleteNode(self, itemID):
         self.Delete(itemID)
 
-    def OnExpand(self, event):
+    def OnExpand(self, evt):
         '''OnExpand is called when the user expands a node on the tree object.
         It checks whether the node has been previously expanded.
         If not, the extendTree function is called to build out the node,
         which is then marked as expanded.'''
 
         # get the wxID of the entry to expand and check it's validity
-        itemID = event.GetItem()
+        itemID = evt.GetItem()
         if not itemID.IsOk(): itemID = self.GetSelection()
 
         # only build that tree if not previously expanded
@@ -209,6 +209,10 @@ class ImageBitmap(wx.StaticBitmap):
         self.imgpath = None
         self.img = None
         self.keepratio = False
+        self.color = None
+        self.Bind(wx.EVT_PAINT, self.OnPaint)
+        self.Bind(wx.EVT_SET_FOCUS, self.OnSetFocus)
+        self.Bind(wx.EVT_KILL_FOCUS, self.OnKillFocus)
         pub.subscribe(self.OnSize, PT.TPC_SIZE)
         pub.subscribe(self.SetKeepratio, PT.TPC_KEEPRATIO)
 
@@ -228,9 +232,11 @@ class ImageBitmap(wx.StaticBitmap):
             else: rate = float(maph) / imgh
             width = int(imgw * rate)
             height = int(imgh * rate)
-            img = self.img.Scale(width, height, wx.IMAGE_QUALITY_HIGH)
+            #img = self.img.Scale(width, height, wx.IMAGE_QUALITY_HIGH)
+            img = self.img.Scale(width, height, wx.IMAGE_QUALITY_NORMAL)
         else:
-            img = self.img.Scale(mapw, maph, wx.IMAGE_QUALITY_HIGH)
+            #img = self.img.Scale(mapw, maph, wx.IMAGE_QUALITY_HIGH)
+            img = self.img.Scale(mapw, maph, wx.IMAGE_QUALITY_NORMAL)
         self.SetBitmap(img.ConvertToBitmap())
 
     def SetKeepratio(self, keepratio):
@@ -238,10 +244,28 @@ class ImageBitmap(wx.StaticBitmap):
         self.OnSize()
 
     def OnSize(self):
-        self.SetSize(self.GetParent().GetSize())
-        self.FitImage()
+        width = self.GetParent().GetSashPosition(0)
+        height = self.GetParent().GetSize()[1]
+        self.SetSize((width, height))
+        if self.img: self.FitImage()
 
-class ImgPanel(wx.Panel):
+    def OnPaint(self, evt):
+        if self.color:
+            dc = wx.PaintDC(self)
+            dc.SetPen(wx.Pen(self.color))
+            x, y = self.GetSize()
+            dc.DrawRectangle(0, 0, x, y)
+
+    def OnSetFocus(self, evt):
+        print "focused"
+        self.color = "#0099f7"
+        self.Refresh()
+
+    def OnKillFocus(self, evt):
+        self.color = "b3b3b3"
+        self.Refresh()
+
+class ImgSchedulerPanel(wx.Panel):
     borderwidth = 6
 
     def __init__(self, parent, size = (760, 570)):
@@ -253,11 +277,13 @@ class ImgPanel(wx.Panel):
         hsplitter = MultiSplitterWindow(self.vsplitter, style = wx.SP_LIVE_UPDATE)
         hsplitter.SetOrientation(wx.HORIZONTAL)
         vsplitter.AppendWindow(hsplitter, self.GetSize()[1])
-        hsplitter.AppendWindow(wx.Panel(hsplitter, style = wx.BORDER_SUNKEN),
-                               vsplitter.GetSize()[0])
+        hsplitter.AppendWindow(ImageBitmap(hsplitter), vsplitter.GetSize()[0])
         self.Bind(wx.EVT_SPLITTER_SASH_POS_CHANGING, self.OnChanging)
         self.Bind(wx.EVT_SPLITTER_SASH_POS_CHANGED, self.OnChanged)
         self.Bind(wx.EVT_SIZE, self.OnSize)
+
+    def GetSelection(self):
+        return self.vsplitter.GetWindow(0).GetWindow(0)
 
     def AddChild(self, splitter, child):
         length = sum(splitter._sashes)
@@ -270,6 +296,7 @@ class ImgPanel(wx.Panel):
         for i, r in enumerate(oldratio):
             splitter.SetSashPosition(i, int(lenforold * r))
             splitter.SizeWindows()
+        pub.sendMessage(PT.TPC_SIZE)
 
     def AddVertical(self):
         hsplitter = MultiSplitterWindow(self.vsplitter, style = wx.SP_LIVE_UPDATE)
@@ -282,23 +309,23 @@ class ImgPanel(wx.Panel):
         hsplitter = self.vsplitter.GetWindow(idx)
         self.AddChild(hsplitter, wx.Panel(hsplitter, style = wx.BORDER_SUNKEN))
 
-    def OnChanging(self, event):
-        eobj = event.GetEventObject()
+    def OnChanging(self, evt):
+        eobj = evt.GetEventObject()
         if eobj.GetOrientation() == wx.HORIZONTAL:
-            print "horizontal", event.GetSashPosition()
-            #eobj.SetSize((event.GetSashPosition(), eobj.GetSize()[1]))
+            print "horizontal", evt.GetSashPosition()
+            #eobj.SetSize((evt.GetSashPosition(), eobj.GetSize()[1]))
         else:
-            print "vertical", event.GetSashPosition()
-            #eobj.SetSize((eobj.GetSize()[0], event.GetSashPosition()))
+            print "vertical", evt.GetSashPosition()
+            #eobj.SetSize((eobj.GetSize()[0], evt.GetSashPosition()))
         print eobj._sashes
 
-    def OnChanged(self, event):
-        if event.GetId() == self.vsplitter.GetId():
-            win = self.vsplitter.GetWindow(event.GetSashIdx())
-            win.SetSize((win.GetSize()[0], event.GetSashPosition()))
+    def OnChanged(self, evt):
+        if evt.GetId() == self.vsplitter.GetId():
+            win = self.vsplitter.GetWindow(evt.GetSashIdx())
+            win.SetSize((win.GetSize()[0], evt.GetSashPosition()))
             win.SizeWindows()
 
-    def OnSize(self, event):
+    def OnSize(self, evt):
         ratiodict = {}
         for win in [self.vsplitter] + self.vsplitter._windows:
             length = float(sum(win._sashes))
@@ -328,13 +355,13 @@ class ImageNotebook(wx.aui.AuiNotebook):
 
     def AddTab(self):
         self.ntab += 1
-        self.AddPage(ImgPanel(self), "tab{0}".format(self.ntab), True)
+        self.AddPage(ImgSchedulerPanel(self), "tab{0}".format(self.ntab), True)
 
     def SetImage(self, path):
         activeidx = self.GetSelection()
         if activeidx != -1:
             activepage = self.GetPage(activeidx)
-            activepage.bitmap.SetImage(path)
+            activepage.GetSelection().SetImage(path)
 
     def SplitVertical(self):
         activeidx = self.GetSelection()
@@ -374,12 +401,11 @@ class MainFrame(wx.Frame):
 
         self.Show(True)
 
-    def OnSize(self, event):
+    def OnSize(self, evt):
         self.Refresh()
         pub.sendMessage(PT.TPC_SIZE)
-        print "window", self.GetSize(), self.srcview.GetSize(), self.imgnotebook.GetSize(), self.imgnotebook.GetPage(0).GetSize()
 
-    def OnQuit(self, event):
+    def OnQuit(self, evt):
         self._mgr.UnInit()
         self.Destroy()
 
