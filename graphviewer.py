@@ -56,16 +56,11 @@ class MainFrame(wx.Frame):
         self.CreateStatusBar(2)
         self.OnPanelChanged()
 
-        #self.Bind(wx.EVT_SIZE, self.OnSize)
         self.Bind(wx.EVT_CLOSE, self.OnQuit)
         pub.subscribe(self.OnPanelChanged, PT.TPC_IMG_SEL_CHANGED)
         pub.subscribe(self.OnPanelSizeChanged, PT.TPC_IMG_SIZE_CHANGED)
 
         self.Show(True)
-
-    def OnSize(self, evt):
-        self.Refresh()
-        pub.sendMessage(PT.TPC_SIZE)
 
     def OnQuit(self, evt):
         self._mgr.UnInit()

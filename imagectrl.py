@@ -12,14 +12,17 @@ class ImageBitmap(wx.StaticBitmap):
         self.imgpath = None
         self.img = None
         self.keepratio = False
+        self.quality = wx.IMAGE_QUALITY_NORMAL
         self.Bind(wx.EVT_LEFT_DOWN, scheduler.OnSetSelection)
         self.Bind(wx.EVT_RIGHT_DOWN, self.OnRightClick)
         pub.subscribe(self.OnSize, PT.TPC_SIZE)
         pub.subscribe(self.SetKeepratio, PT.TPC_KEEPRATIO)
+        pub.subscribe(self.SetQuality, PT.TPC_QUALITY)
 
     def Destroy(self):
         pub.unsubscribe(self.OnSize, PT.TPC_SIZE)
         pub.unsubscribe(self.SetKeepratio, PT.TPC_KEEPRATIO)
+        pub.unsubscribe(self.SetQuality, PT.TPC_QUALITY)
         wx.StaticBitmap.Destroy(self)
 
     def SetImage(self, path):
@@ -29,6 +32,11 @@ class ImageBitmap(wx.StaticBitmap):
 
     def SetKeepratio(self, keepratio):
         self.keepratio = keepratio
+        self.FitPanel()
+
+    def SetQuality(self, quality):
+        if quality: self.quality = wx.IMAGE_QUALITY_HIGH
+        else: self.quality = wx.IMAGE_QUALITY_NORMAL
         self.FitPanel()
 
     def OnSize(self, evt = None):
@@ -47,8 +55,6 @@ class ImageBitmap(wx.StaticBitmap):
         pub.sendMessage(PT.TPC_IMG_SIZE_CHANGED, id = self.GetId())
 
     def FitImage(self):
-        quality = wx.IMAGE_QUALITY_NORMAL
-        #quality = wx.IMAGE_QUALITY_HIGH
         mapw, maph = self.GetParentSize()
         imgw, imgh = self.img.GetWidth(), self.img.GetHeight()
         if self.keepratio:
@@ -58,9 +64,9 @@ class ImageBitmap(wx.StaticBitmap):
             else: rate = float(maph) / imgh
             width = int(imgw * rate)
             height = int(imgh * rate)
-            img = self.img.Scale(width, height, quality)
+            img = self.img.Scale(width, height, self.quality)
         else:
-            img = self.img.Scale(mapw, maph, quality)
+            img = self.img.Scale(mapw, maph, self.quality)
         self.SetBitmap(img.ConvertToBitmap())
 
     def OnRightClick(self, evt):
@@ -77,7 +83,7 @@ class ImgMultiSplitter(MultiSplitterWindow):
         self.Bind(wx.EVT_SPLITTER_SASH_POS_CHANGED, self.OnChanged)
 
     def Destroy(self):
-        for child in child._windows: child.Destroy()
+        for child in self._windows: child.Destroy()
         MultiSplitterWindow.Destroy(self)
 
     def CalcRatio(self, sashes):
@@ -101,7 +107,9 @@ class ImgMultiSplitter(MultiSplitterWindow):
         newsashes.pop(self._windows.index(window))
         newratio = self.CalcRatio(newsashes)
         length = sum(self._sashes) + self._GetSashSize()
-        self.SetSelection(None)
+        parent = self.GetParent()
+        while not isinstance(parent, ImgSchedulerPanel): parent = parent.GetParent()
+        parent.SetSelection(None)
         self.DetachWindow(window)
         window.Destroy()
         for i, r in enumerate(newratio): self.SetSashPosition(i, int(length * r))
@@ -126,6 +134,7 @@ class ImgMultiSplitter(MultiSplitterWindow):
         else:
             length = self.GetSize()[0] - self._GetSashSize() * (len(ratio) - 1)
         for i, r in enumerate(ratio): self.SetSashPosition(i, int(length * r))
+        pub.sendMessage(PT.TPC_SIZE)
 
     def OnSize(self, evt):
         self.FitParent()
@@ -136,7 +145,7 @@ class ImgMultiSplitter(MultiSplitterWindow):
         oldpos = self.GetSashPosition(idx)
         newpos = evt.GetSashPosition()
         if 0 == newpos: newpos = 1
-        print oldpos, newpos
+        #print oldpos, newpos
         """
         if oldpos > newpos: # slide left or up
             targetsashpos = self.GetSashPosition(idx + 1)
@@ -213,7 +222,6 @@ class ImageNotebook(wx.aui.AuiNotebook):
         self.ntab = 0
         self.AddTab()
         self.Bind(wx.aui.EVT_AUINOTEBOOK_PAGE_CHANGED, self.OnPageChanged)
-        pub.subscribe(self.AddTab, PT.TPC_ADDTAB)
         pub.subscribe(self.SetImage, PT.TPC_SRCTREE_SEL_CHANGED)
 
     def AddTab(self):
@@ -245,6 +253,7 @@ class ImageControlMenu(wx.Menu):
         self.AppendItem(addtabitem)
         self.AppendSeparator()
         keepratio = self.Append(-1, 'Keep original ratio', kind = wx.ITEM_CHECK)
+        quality = self.Append(-1, 'Image quality high', kind = wx.ITEM_CHECK)
         self.AppendSeparator()
         splitvitem = self.Append(-1, "Split vertical")
         splithitem = self.Append(-1, "Split horizontal")
@@ -253,6 +262,7 @@ class ImageControlMenu(wx.Menu):
 
         self.Bind(wx.EVT_MENU, self.OnAddTab, addtabitem)
         self.Bind(wx.EVT_MENU, self.SetKeepRatio, keepratio)
+        self.Bind(wx.EVT_MENU, self.SetQuality, quality)
         self.Bind(wx.EVT_MENU, self.OnSplitVertical, splitvitem)
         self.Bind(wx.EVT_MENU, self.OnSplitHorizontal, splithitem)
         self.Bind(wx.EVT_MENU, self.OnDelete, deleteitem)
@@ -263,6 +273,9 @@ class ImageControlMenu(wx.Menu):
 
     def SetKeepRatio(self, evt):
         pub.sendMessage(PT.TPC_KEEPRATIO, keepratio = evt.IsChecked())
+
+    def SetQuality(self, evt):
+        pub.sendMessage(PT.TPC_QUALITY, quality = evt.IsChecked())
 
     def OnSplitVertical(self, evt):
         activepage = self.imgnotebook.GetActivePage()
