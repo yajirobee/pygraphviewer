@@ -4,7 +4,7 @@ import sys, os, wx, wx.aui
 from wx.lib.pubsub import pub
 from eventconst import PT
 from sourcetree import SourceTree
-from imagectrl import ImageNotebook
+from imagectrl import ImageNotebook, ImageControlMenu
 
 class MainMenuBar(wx.MenuBar):
     def __init__(self, RootFrame):
@@ -18,44 +18,16 @@ class MainMenuBar(wx.MenuBar):
         filemenu.AppendSeparator()
         filemenu.AppendItem(quititem)
 
-        windowmenu = wx.Menu()
-        addtabitem = wx.MenuItem(windowmenu, -1, 'Add new tab\tCtrl+T')
-        windowmenu.AppendItem(addtabitem)
-        windowmenu.AppendSeparator()
-        splitv = windowmenu.Append(-1, "Split vertical")
-        splith = windowmenu.Append(-1, "Split horizontal")
-
-        optionmenu = wx.Menu()
-        keepratio = optionmenu.Append(-1, 'Keep original ratio', kind = wx.ITEM_CHECK)
-
-        RootFrame.Bind(wx.EVT_MENU, self.OnOpenDir, openitem)
-        RootFrame.Bind(wx.EVT_MENU, RootFrame.OnQuit, quititem)
-        RootFrame.Bind(wx.EVT_MENU, self.OnAddTab, addtabitem)
-        RootFrame.Bind(wx.EVT_MENU, self.SetKeepRatio, keepratio)
-        RootFrame.Bind(wx.EVT_MENU, self.OnSplitVertical, splitv)
-        RootFrame.Bind(wx.EVT_MENU, self.OnSplitHorizontal, splith)
+        filemenu.Bind(wx.EVT_MENU, self.OnOpenDir, openitem)
+        filemenu.Bind(wx.EVT_MENU, RootFrame.OnQuit, quititem)
 
         self.Append(filemenu, '&File')
-        self.Append(windowmenu, '&Window')
-        self.Append(optionmenu, '&Option')
 
     def OnOpenDir(self, evt):
         dlg = wx.DirDialog(self, "Choose a Directory", style = wx.DD_DEFAULT_STYLE)
         if dlg.ShowModal() == wx.ID_OK:
             pub.sendMessage(PT.TPC_OPENDIR, path = dlg.GetPath())
         dlg.Destroy()
-
-    def OnAddTab(self, evt):
-        pub.sendMessage(PT.TPC_ADDTAB)
-
-    def OnSplitVertical(self, evt):
-        pub.sendMessage(PT.TPC_SPLIT_VERTICAL)
-
-    def OnSplitHorizontal(self, evt):
-        pub.sendMessage(PT.TPC_SPLIT_HORIZONTAL)
-
-    def SetKeepRatio(self, evt):
-        pub.sendMessage(PT.TPC_KEEPRATIO, keepratio = evt.IsChecked())
 
 class MainFrame(wx.Frame):
     def __init__(self, parent, id, title,
@@ -76,13 +48,15 @@ class MainFrame(wx.Frame):
         self._mgr.Update()
 
         # set menubar
-        self.SetMenuBar(MainMenuBar(self))
+        mainmenubar = MainMenuBar(self)
+        mainmenubar.Append(ImageControlMenu(imgnotebook), "&ImageView")
+        self.SetMenuBar(mainmenubar)
 
         # set statusbar
         self.CreateStatusBar(2)
         self.OnPanelChanged()
 
-        self.Bind(wx.EVT_SIZE, self.OnSize)
+        #self.Bind(wx.EVT_SIZE, self.OnSize)
         self.Bind(wx.EVT_CLOSE, self.OnQuit)
         pub.subscribe(self.OnPanelChanged, PT.TPC_IMG_SEL_CHANGED)
         pub.subscribe(self.OnPanelSizeChanged, PT.TPC_IMG_SIZE_CHANGED)
