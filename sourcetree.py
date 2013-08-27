@@ -11,36 +11,55 @@ def isimage(path):
     else: return False
 
 class SourceTree(wx.TreeCtrl):
+    savefile = "backuptree.txt"
     class SourceTreeMenu(wx.Menu):
-        def __init__(self, parent, itemID):
+        def __init__(self, parent, itemID = None):
             wx.Menu.__init__(self)
             self.parent = parent
             self.itemID = itemID
 
             reloaditem = self.Append(-1, 'Reload list')
-            self.AppendSeparator()
-            deleteitem = self.Append(-1, 'Delete from list')
+            clearitem = self.Append(-1, 'Clear list')
 
             self.Bind(wx.EVT_MENU, self.OnReload, reloaditem)
-            self.Bind(wx.EVT_MENU, self.OnDeleteNode, deleteitem)
+            self.Bind(wx.EVT_MENU, self.OnClear, clearitem)
+
+            if itemID:
+                self.AppendSeparator()
+                deleteitem = self.Append(-1, 'Delete from list')
+                self.Bind(wx.EVT_MENU, self.OnDeleteNode, deleteitem)
 
         def OnReload(self, evt):
             self.parent.Reload()
 
+        def OnClear(self, evt):
+            self.parent.Clear()
+
         def OnDeleteNode(self, evt):
-            self.parent.DeleteNode(self.itemID)
+            self.parent.Delete(self.itemID)
 
     def __init__(self, parent, size = (200, 400)):
         wx.TreeCtrl.__init__(self, parent, size = size,
                              style = wx.TR_HAS_BUTTONS | wx.TR_HIDE_ROOT | wx.TR_SINGLE |
                              wx.TR_DEFAULT_STYLE | wx.SUNKEN_BORDER)
         self.Bind(wx.EVT_TREE_ITEM_EXPANDING, self.OnExpand, self)
-        self.Bind(wx.EVT_TREE_ITEM_RIGHT_CLICK, self.OnRightClick, self)
+        self.Bind(wx.EVT_TREE_ITEM_RIGHT_CLICK, self.OnItemRightClick, self)
         self.Bind(wx.EVT_TREE_SEL_CHANGED, self.OnSelectionChanged, self)
         pub.subscribe(self.AddRootChild, PT.TPC_OPENDIR)
         self.rootID = self.AddRoot("root")
+        if os.access(self.savefile, os.R_OK):
+            for path in open(self.savefile): self.AddRootChild(path.strip())
 
-    def OnRightClick(self, evt):
+    def Destroy(self):
+        with open(self.savefile, "w") as fo:
+            c, cookie = self.GetFirstChild(self.rootID)
+            while c.IsOk():
+                pydata = self.GetPyData(c)
+                fo.write(pydata[0] + "\n")
+                c, cookie = self.GetNextChild(self.rootID, cookie)
+        wx.TreeCtrl.Destroy(self)
+
+    def OnItemRightClick(self, evt):
         itemID = evt.GetItem()
         if not itemID.IsOk(): itemID = self.GetSelection()
         menu = self.SourceTreeMenu(self, itemID)
@@ -62,8 +81,9 @@ class SourceTree(wx.TreeCtrl):
             self.ExtendTree(child)
             child, cookie = self.GetNextChild(self.rootID, cookie)
 
-    def DeleteNode(self, itemID):
-        self.Delete(itemID)
+    def Clear(self):
+        self.DeleteAllItems()
+        self.rootID = self.AddRoot("root")
 
     def OnExpand(self, evt):
         '''OnExpand is called when the user expands a node on the tree object.

@@ -64,6 +64,8 @@ class MainFrame(wx.Frame):
 
     def OnQuit(self, evt):
         self._mgr.UnInit()
+        self.imgnotebook.Destroy()
+        self.srcview.Destroy()
         self.Destroy()
 
     def OnPanelChanged(self):
