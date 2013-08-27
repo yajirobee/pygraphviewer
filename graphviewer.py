@@ -49,7 +49,7 @@ class MainFrame(wx.Frame):
 
         # set menubar
         mainmenubar = MainMenuBar(self)
-        mainmenubar.Append(ImageControlMenu(imgnotebook), "&ImageView")
+        mainmenubar.Append(imgnotebook.imgmenu, "&ImageView")
         self.SetMenuBar(mainmenubar)
 
         # set statusbar

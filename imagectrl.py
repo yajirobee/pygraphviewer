@@ -1,6 +1,6 @@
 #! /usr/bin/env python
 
-import os, sys, wx, wx.aui
+import os, sys, wx, wx.aui, Image
 from wx.lib.pubsub import pub
 from wx.lib.splitter import MultiSplitterWindow
 from eventconst import PT
@@ -10,33 +10,23 @@ class ImageBitmap(wx.StaticBitmap):
         wx.StaticBitmap.__init__(self, parent)
         self.scheduler = scheduler
         self.imgpath = None
-        self.img = None
         self.keepratio = False
-        self.quality = wx.IMAGE_QUALITY_NORMAL
         self.Bind(wx.EVT_LEFT_DOWN, scheduler.OnSetSelection)
         self.Bind(wx.EVT_RIGHT_DOWN, self.OnRightClick)
         pub.subscribe(self.OnSize, PT.TPC_SIZE)
         pub.subscribe(self.SetKeepratio, PT.TPC_KEEPRATIO)
-        pub.subscribe(self.SetQuality, PT.TPC_QUALITY)
 
     def Destroy(self):
         pub.unsubscribe(self.OnSize, PT.TPC_SIZE)
         pub.unsubscribe(self.SetKeepratio, PT.TPC_KEEPRATIO)
-        pub.unsubscribe(self.SetQuality, PT.TPC_QUALITY)
         wx.StaticBitmap.Destroy(self)
 
     def SetImage(self, path):
         self.imgpath = path
-        self.img = wx.Image(path)
         self.FitPanel()
 
     def SetKeepratio(self, keepratio):
         self.keepratio = keepratio
-        self.FitPanel()
-
-    def SetQuality(self, quality):
-        if quality: self.quality = wx.IMAGE_QUALITY_HIGH
-        else: self.quality = wx.IMAGE_QUALITY_NORMAL
         self.FitPanel()
 
     def OnSize(self, evt = None):
@@ -50,28 +40,40 @@ class ImageBitmap(wx.StaticBitmap):
         return width, height
 
     def FitPanel(self):
-        if self.img: self.FitImage()
+        if self.imgpath: self.FitImage()
         self.SetSize(self.GetParentSize())
         pub.sendMessage(PT.TPC_IMG_SIZE_CHANGED, id = self.GetId())
 
     def FitImage(self):
+        img = Image.open(self.imgpath)
         mapw, maph = self.GetParentSize()
-        imgw, imgh = self.img.GetWidth(), self.img.GetHeight()
+        imgw, imgh = img.size
         if self.keepratio:
             mapratio = float(mapw) / maph
             imgratio = float(imgw) / imgh
             if mapratio <= imgratio: rate = float(mapw) / imgw
             else: rate = float(maph) / imgh
-            width = int(imgw * rate)
-            height = int(imgh * rate)
-            img = self.img.Scale(width, height, self.quality)
+            width, height = int(imgw * rate), int(imgh * rate)
         else:
-            img = self.img.Scale(mapw, maph, self.quality)
-        self.SetBitmap(img.ConvertToBitmap())
+            width, height = mapw, maph
+        if width < imgw or height < maph: flt = Image.ANTIALIAS
+        else: flt = Image.NEAREST
+        scaledimg = img.resize((width, height), flt)
+        wximg = wx.EmptyImage(scaledimg.size[0], scaledimg.size[1])
+        wximg.SetData(scaledimg.convert('RGB').tostring())
+        self.SetBitmap(wximg.ConvertToBitmap())
 
     def OnRightClick(self, evt):
         self.scheduler.SetSelection(evt.GetEventObject())
+        # This is very messy implementation because we cannot reconstruct menubar
+        # for each menubar open (EVT_MENU_OPEN event does not work on Unity).
+        menu = self.scheduler.GetParent().imgmenu
+        menubar = self.GetTopLevelParent().GetMenuBar()
+        for i, vals in enumerate(menubar.GetMenus()):
+            if menu == vals[0]: break
+        menubar.Remove(i)
         self.PopupMenu(self.scheduler.GetParent().imgmenu)
+        menubar.Insert(i, vals[0], vals[1])
 
 class ImgMultiSplitter(MultiSplitterWindow):
     def __init__(self, parent, orientaion,
@@ -253,7 +255,6 @@ class ImageControlMenu(wx.Menu):
         self.AppendItem(addtabitem)
         self.AppendSeparator()
         keepratio = self.Append(-1, 'Keep original ratio', kind = wx.ITEM_CHECK)
-        quality = self.Append(-1, 'Image quality high', kind = wx.ITEM_CHECK)
         self.AppendSeparator()
         splitvitem = self.Append(-1, "Split vertical")
         splithitem = self.Append(-1, "Split horizontal")
@@ -262,7 +263,6 @@ class ImageControlMenu(wx.Menu):
 
         self.Bind(wx.EVT_MENU, self.OnAddTab, addtabitem)
         self.Bind(wx.EVT_MENU, self.SetKeepRatio, keepratio)
-        self.Bind(wx.EVT_MENU, self.SetQuality, quality)
         self.Bind(wx.EVT_MENU, self.OnSplitVertical, splitvitem)
         self.Bind(wx.EVT_MENU, self.OnSplitHorizontal, splithitem)
         self.Bind(wx.EVT_MENU, self.OnDelete, deleteitem)
@@ -273,9 +273,6 @@ class ImageControlMenu(wx.Menu):
 
     def SetKeepRatio(self, evt):
         pub.sendMessage(PT.TPC_KEEPRATIO, keepratio = evt.IsChecked())
-
-    def SetQuality(self, evt):
-        pub.sendMessage(PT.TPC_QUALITY, quality = evt.IsChecked())
 
     def OnSplitVertical(self, evt):
         activepage = self.imgnotebook.GetActivePage()
