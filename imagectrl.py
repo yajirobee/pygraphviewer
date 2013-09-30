@@ -1,6 +1,7 @@
 #! /usr/bin/env python
 
-import os, sys, wx, wx.aui, Image
+import os, sys, wx, wx.aui
+import imagelogics
 from wx.lib.pubsub import pub
 from wx.lib.splitter import MultiSplitterWindow
 from eventconst import PT
@@ -45,20 +46,9 @@ class ImageBitmap(wx.StaticBitmap):
         pub.sendMessage(PT.TPC_IMG_SIZE_CHANGED, id = self.GetId())
 
     def FitImage(self):
-        img = Image.open(self.imgpath)
-        mapw, maph = self.GetParentSize()
-        imgw, imgh = img.size
-        if self.keepratio:
-            mapratio = float(mapw) / maph
-            imgratio = float(imgw) / imgh
-            if mapratio <= imgratio: rate = float(mapw) / imgw
-            else: rate = float(maph) / imgh
-            width, height = int(imgw * rate), int(imgh * rate)
-        else:
-            width, height = mapw, maph
-        if width < imgw or height < maph: flt = Image.ANTIALIAS
-        else: flt = Image.NEAREST
-        scaledimg = img.resize((width, height), flt)
+        scaledimg = imagelogics.Get_MaxScaledImg(self.imgpath,
+                                                 self.GetParentSize(),
+                                                 self.keepratio)
         wximg = wx.EmptyImage(scaledimg.size[0], scaledimg.size[1])
         wximg.SetData(scaledimg.convert('RGB').tostring())
         self.SetBitmap(wximg.ConvertToBitmap())
@@ -89,32 +79,27 @@ class ImgMultiSplitter(MultiSplitterWindow):
         MultiSplitterWindow.Destroy(self)
 
     def CalcRatio(self, sashes):
-        length = sum(sashes)
-        return [v / float(length) for v in sashes]
+        return [v / float(sum(sashes)) for v in sashes]
 
     def AddWindow(self, window):
-        oldratio = self.CalcRatio(self._sashes)
-        oldnwin = len(oldratio)
+        ratio = imagelogics.Calc_Ratio_WindowCommission(self.CalcRatio(self._sashes))
         length = sum(self._sashes) - self._GetSashSize()
-        lenfornew = int(length / (oldnwin + 1.))
-        lenforold = length - lenfornew
-        self.AppendWindow(window, lenfornew)
-        for i, r in enumerate(oldratio): self.SetSashPosition(i, int(lenforold * r))
+        self.AppendWindow(window, int(length * ratio[-1]))
+        for i, r in enumerate(ratio[:-1]): self.SetSashPosition(i, int(length * r))
         self.SizeWindows()
         pub.sendMessage(PT.TPC_SIZE)
 
     def DeleteWindow(self, window):
         if len(self._windows) == 1: return
-        newsashes = self._sashes[:]
-        newsashes.pop(self._windows.index(window))
-        newratio = self.CalcRatio(newsashes)
+        ratio = imagelogics.Calc_Ratio_WindowDecommission(self.CalcRatio(self._sashes),
+                                                          self._windows.index(window))
         length = sum(self._sashes) + self._GetSashSize()
         parent = self.GetParent()
         while not isinstance(parent, ImgSchedulerPanel): parent = parent.GetParent()
         parent.SetSelection(None)
         self.DetachWindow(window)
         window.Destroy()
-        for i, r in enumerate(newratio): self.SetSashPosition(i, int(length * r))
+        for i, r in enumerate(ratio): self.SetSashPosition(i, int(length * r))
         self.SizeWindows()
         pub.sendMessage(PT.TPC_SIZE)
 
