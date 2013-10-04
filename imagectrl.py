@@ -46,11 +46,11 @@ class ImageBitmap(wx.StaticBitmap):
         pub.sendMessage(PT.TPC_IMG_SIZE_CHANGED, id = self.GetId())
 
     def FitImage(self):
-        scaledimg = imagelogics.Get_MaxScaledImg(self.imgpath,
-                                                 self.GetParentSize(),
-                                                 self.keepratio)
-        wximg = wx.EmptyImage(scaledimg.size[0], scaledimg.size[1])
-        wximg.SetData(scaledimg.convert('RGB').tostring())
+        size, scaledimg = imagelogics.Get_MaxScaledImg(self.imgpath,
+                                                       self.GetParentSize(),
+                                                       self.keepratio)
+        wximg = wx.EmptyImage(size[0], size[1])
+        wximg.SetData(scaledimg)
         self.SetBitmap(wximg.ConvertToBitmap())
 
     def OnRightClick(self, evt):
