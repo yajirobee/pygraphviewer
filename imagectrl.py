@@ -99,16 +99,18 @@ class ImgMultiSplitter(MultiSplitterWindow):
 class ImagePanel(wx.Panel):
     def __init__(self, parent):
         wx.Panel.__init__(self, parent)
-        self.bitmap = wx.StaticBitmap(parent)
+        self.bitmap = wx.StaticBitmap(self)
         self.imgpath = None
         self.keepratio = False
-        self.Bind(wx.EVT_LEFT_DOWN, parent.OnSetSelection)
+        self.Bind(wx.EVT_SIZE, self.OnSize)
+        self.Bind(wx.EVT_LEFT_DOWN, self.OnClick)
         self.Bind(wx.EVT_RIGHT_DOWN, self.OnRightClick)
-        pub.subscribe(self.OnSize, PT.TPC_SIZE)
+        self.bitmap.Bind(wx.EVT_LEFT_DOWN, self.OnClick)
+        self.bitmap.Bind(wx.EVT_RIGHT_DOWN, self.OnRightClick)
         pub.subscribe(self.SetKeepratio, PT.TPC_KEEPRATIO)
 
     def Destroy(self):
-        pub.unsubscribe(self.OnSize, PT.TPC_SIZE)
+        #pub.unsubscribe(self.OnSize, PT.TPC_SIZE)
         pub.unsubscribe(self.SetKeepratio, PT.TPC_KEEPRATIO)
         wx.Panel.Destroy(self)
 
@@ -135,8 +137,14 @@ class ImagePanel(wx.Panel):
         wximg.SetData(scaledimg)
         self.bitmap.SetBitmap(wximg.ConvertToBitmap())
 
+    def OnClick(self, evt):
+        if isinstance(evt.GetEventObject(), wx.StaticBitmap):
+            evt.SetEventObject(evt.GetEventObject().GetParent())
+            self.GetParent().OnSelectionChanged(evt)
+        else: self.GetParent().OnSelectionChanged(evt)
+
     def OnRightClick(self, evt):
-        # self.GetParent().SetSelection(evt.GetEventObject())
+        self.OnClick(evt)
         # This is very messy implementation because we cannot reconstruct menubar
         # for each menubar open (EVT_MENU_OPEN event does not work on Unity).
         menu = self.GetParent().GetParent().imgmenu
@@ -149,7 +157,15 @@ class ImagePanel(wx.Panel):
 
 class ImagePerspective(aui.AuiNotebook):
     def __init__(self, parent, size = (760, 570)):
-        aui.AuiNotebook.__init__(self, parent, size = size)
+        IMAGEPERSPECTIVE_AGW_STYLE = (aui.AUI_NB_TOP |
+                                      aui.AUI_NB_TAB_SPLIT |
+                                      aui.AUI_NB_TAB_MOVE |
+                                      aui.AUI_NB_TAB_EXTERNAL_MOVE |
+                                      aui.AUI_NB_SCROLL_BUTTONS |
+                                      aui.AUI_NB_CLOSE_ON_ALL_TABS |
+                                      aui.AUI_NB_DRAW_DND_TAB)
+        aui.AuiNotebook.__init__(self, parent, size = size,
+                                 agwStyle = IMAGEPERSPECTIVE_AGW_STYLE)
         self.ntab = 0
         self.AddTab()
         self.Bind(wx.EVT_SIZE, self.OnSize)
@@ -162,12 +178,9 @@ class ImagePerspective(aui.AuiNotebook):
             idx = self.GetPageIndex(newpanel)
             self.Split(idx, direction)
 
-    def SetSelection(self, newselection):
-        aui.AuiNotebook.SetSelection(self, newselection)
+    def OnSelectionChanged(self, evt):
+        self.SetSelectionToWindow(evt.GetEventObject())
         pub.sendMessage(PT.TPC_IMG_SEL_CHANGED)
-
-    def OnSetSelection(self, evt):
-        self.SetSelection(evt.GetEventObject())
 
 class ImageView(aui.AuiNotebook):
     def __init__(self, parent, size = (800, 600)):
@@ -200,40 +213,46 @@ class ImageView(aui.AuiNotebook):
         pub.sendMessage(PT.TPC_IMG_SEL_CHANGED)
 
 class ImageControlMenu(wx.Menu):
+    keepratio = False
+
     def __init__(self, imgview):
         wx.Menu.__init__(self)
         self.imgview = imgview
 
         addtabitem = wx.MenuItem(self, -1, 'Add new Perspective\tCtrl+T')
+        splitvitem = wx.MenuItem(self, -1, 'Split vertical\tCtrl+V')
+        splithitem = wx.MenuItem(self, -1, 'Split horizontal\tCtrl+H')
         self.AppendItem(addtabitem)
         self.AppendSeparator()
-        keepratio = self.Append(-1, 'Keep original ratio', kind = wx.ITEM_CHECK)
+        keepratioitem = self.Append(-1, 'Keep original ratio', kind = wx.ITEM_CHECK)
+        keepratioitem.Check(ImageControlMenu.keepratio)
         self.AppendSeparator()
-        splitvitem = self.Append(-1, "Split vertical")
-        splithitem = self.Append(-1, "Split horizontal")
-        deleteperspective = self.Append(-1, "Delete Perspective")
-        deletepanel = self.Append(-1, "Delete Panel")
+        self.AppendItem(splitvitem)
+        self.AppendItem(splithitem)
+        delperspectiveitem = self.Append(-1, "Delete Perspective")
+        delpanelitem = self.Append(-1, "Delete Panel")
 
         self.Bind(wx.EVT_MENU, self.OnAddTab, addtabitem)
-        self.Bind(wx.EVT_MENU, self.SetKeepRatio, keepratio)
+        self.Bind(wx.EVT_MENU, self.SetKeepRatio, keepratioitem)
         self.Bind(wx.EVT_MENU, self.OnSplitVertical, splitvitem)
         self.Bind(wx.EVT_MENU, self.OnSplitHorizontal, splithitem)
-        self.Bind(wx.EVT_MENU, self.OnDeletePerSpective, deleteperspective)
-        self.Bind(wx.EVT_MENU, self.OnDeletePanel, deletepanel)
+        self.Bind(wx.EVT_MENU, self.OnDeletePerSpective, delperspectiveitem)
+        self.Bind(wx.EVT_MENU, self.OnDeletePanel, delpanelitem)
 
     def OnAddTab(self, evt):
         self.imgview.AddTab()
 
     def SetKeepRatio(self, evt):
+        ImageControlMenu.keepraio = evt.IsChecked()
         pub.sendMessage(PT.TPC_KEEPRATIO, keepratio = evt.IsChecked())
 
     def OnSplitVertical(self, evt):
         activeperspective = self.imgview.GetCurrentPage()
-        if activeperspective: activeperspective.AddTab(aui.AUI_NB_RIGHT)
+        if activeperspective: activeperspective.AddTab(wx.BOTTOM)
 
     def OnSplitHorizontal(self, evt):
         activeperspective = self.imgview.GetCurrentPage()
-        if activeperspective: activeperspective.AddTab(aui.AUI_NB_BOTTOM)
+        if activeperspective: activeperspective.AddTab(wx.RIGHT)
 
     def OnDeletePerSpective(self, evt):
         activeperspective = self.imgview.GetCurrentPage()
