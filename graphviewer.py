@@ -1,10 +1,11 @@
 #! /usr/bin/env python
 
-import sys, os, wx, wx.aui
-from wx.lib.pubsub import pub
+import sys, os, wx
 from eventconst import PT
 from sourcetree import SourceTree
-from imagectrl import ImageNotebook, ImageControlMenu
+from imagectrl import ImageView, ImageControlMenu
+from wx.lib.pubsub import pub
+import wx.lib.agw.aui as aui
 
 class MainMenuBar(wx.MenuBar):
     def __init__(self, RootFrame):
@@ -34,22 +35,22 @@ class MainFrame(wx.Frame):
                  pos = wx.DefaultPosition, size = (1280, 720),
                  style = wx.DEFAULT_FRAME_STYLE):
         wx.Frame.__init__(self, parent, id, title, pos, size, style)
-        self._mgr = wx.aui.AuiManager(self)
+        self._mgr = aui.AuiManager(self)
 
         # create controls
         self.srcview = srcview = SourceTree(self, size = (200, 400))
-        self.imgnotebook = imgnotebook = ImageNotebook(self, size = (800, 600))
+        self.imgview = imgview = ImageView(self, size = (800, 600))
 
         # add the panes to the manger
         self._mgr.AddPane(srcview, wx.LEFT, "source view")
-        self._mgr.AddPane(imgnotebook, wx.CENTER)
+        self._mgr.AddPane(imgview, wx.CENTER)
 
         # tell the manager to 'commit' all the changes just made
         self._mgr.Update()
 
         # set menubar
         mainmenubar = MainMenuBar(self)
-        mainmenubar.Append(imgnotebook.imgmenu, "&ImageView")
+        mainmenubar.Append(imgview.imgmenu, "&ImageView")
         self.SetMenuBar(mainmenubar)
 
         # set statusbar
@@ -64,33 +65,37 @@ class MainFrame(wx.Frame):
 
     def OnQuit(self, evt):
         self._mgr.UnInit()
-        self.imgnotebook.Destroy()
+        self.imgview.Destroy()
         self.srcview.Destroy()
         self.Destroy()
 
     def OnPanelChanged(self):
-        activepage = self.imgnotebook.GetActivePage()
-        if activepage: self.activepanel = activepage.GetSelection()
-        else: self.activepanel = None
-        if self.activepanel:
-            parent = self.activepanel.GetParent()
-            gparent = parent.GetParent()
-            tabname = self.imgnotebook.GetPageText(self.imgnotebook.GetSelection())
-            x = parent._windows.index(self.activepanel)
-            y = gparent._windows.index(parent)
-            imgpath = self.activepanel.imgpath if self.activepanel.imgpath else "Empty Image Panel"
-            statusstr = "{0} ({1},{2}) {3}".format(tabname, x, y, imgpath)
-        else: statusstr = "No panel choosen"
+        activeperspective = self.imgview.GetCurrentPage()
+        if activeperspective:
+            activepanel = activeperspective.GetCurrentPage()
+            if activepanel:
+                tabname = activeperspective.GetPageText(activeperspective.GetSelection())
+                imgpath = activepanel.imgpath if activepanel.imgpath else "Empty Image Panel"
+                statusstr = "{0} {1}".format(tabname, imgpath)
+            else:
+                statusstr = "No panel choosen"
+        else: statusstr = "No perspective choosen"
         self.SetStatusText(statusstr, 0)
-        self.OnPanelSizeChanged(self.activepanel.GetId() if self.activepanel else None)
+        self.OnPanelSizeChanged(activepanel.GetId() if activepanel else None)
 
     def OnPanelSizeChanged(self, id):
-        if self.activepanel and self.activepanel.GetId() == id:
-            x, y = self.activepanel.GetSize()
-            statusstr = "Window size : ({0}x{1})".format(x, y)
-            bitmap = self.activepanel.GetBitmap()
-            if bitmap != wx.NullBitmap:
-                statusstr += " Image size : ({0}x{1})".format(bitmap.GetWidth(), bitmap.GetHeight())
+        activeperspective = self.imgview.GetCurrentPage()
+        if activeperspective:
+            activepanel = activeperspective.GetCurrentPage()
+            if activepanel and activepanel.GetId() == id:
+                x, y = activepanel.GetSize()
+                statusstr = "Window size : ({0}x{1})".format(x, y)
+                bitmap = activepanel.bitmap.GetBitmap()
+                if bitmap != wx.NullBitmap:
+                    statusstr += (" Image size : ({0}x{1})"
+                                  .format(bitmap.GetWidth(), bitmap.GetHeight()))
+            else:
+                statusstr = ""
             self.SetStatusText(statusstr, 1)
         elif self.activepanel == None and id == None:
             statusstr = ""

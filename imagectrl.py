@@ -7,74 +7,12 @@ import wx.lib.agw.aui as aui
 from wx.lib.pubsub import pub
 from wx.lib.splitter import MultiSplitterWindow
 
-
-class ImageBitmap(wx.StaticBitmap):
-    def __init__(self, parent, scheduler):
-        wx.StaticBitmap.__init__(self, parent)
-        self.scheduler = scheduler
-        self.imgpath = None
-        self.keepratio = False
-        self.Bind(wx.EVT_LEFT_DOWN, scheduler.OnSetSelection)
-        self.Bind(wx.EVT_RIGHT_DOWN, self.OnRightClick)
-        pub.subscribe(self.OnSize, PT.TPC_SIZE)
-        pub.subscribe(self.SetKeepratio, PT.TPC_KEEPRATIO)
-
-    def Destroy(self):
-        pub.unsubscribe(self.OnSize, PT.TPC_SIZE)
-        pub.unsubscribe(self.SetKeepratio, PT.TPC_KEEPRATIO)
-        wx.StaticBitmap.Destroy(self)
-
-    def SetImage(self, path):
-        self.imgpath = path
-        self.FitPanel()
-
-    def SetKeepratio(self, keepratio):
-        self.keepratio = keepratio
-        self.FitPanel()
-
-    def OnSize(self, evt = None):
-        self.FitPanel()
-
-    def GetParentSize(self):
-        parent = self.GetParent()
-        idx = parent._windows.index(self)
-        width = parent.GetSashPosition(idx)
-        height = parent.GetSize()[1]
-        return width, height
-
-    def FitPanel(self):
-        if self.imgpath: self.FitImage()
-        self.SetSize(self.GetParentSize())
-        pub.sendMessage(PT.TPC_IMG_SIZE_CHANGED, id = self.GetId())
-
-    def FitImage(self):
-        size, scaledimg = imagelogics.Get_MaxScaledImg(self.imgpath,
-                                                       self.GetParentSize(),
-                                                       self.keepratio)
-        wximg = wx.EmptyImage(size[0], size[1])
-        wximg.SetData(scaledimg)
-        self.SetBitmap(wximg.ConvertToBitmap())
-
-    def OnRightClick(self, evt):
-        self.scheduler.SetSelection(evt.GetEventObject())
-        # This is very messy implementation because we cannot reconstruct menubar
-        # for each menubar open (EVT_MENU_OPEN event does not work on Unity).
-        menu = self.scheduler.GetParent().imgmenu
-        menubar = self.GetTopLevelParent().GetMenuBar()
-        for i, vals in enumerate(menubar.GetMenus()):
-            if menu == vals[0]: break
-        menubar.Remove(i)
-        self.PopupMenu(self.scheduler.GetParent().imgmenu)
-        menubar.Insert(i, vals[0], vals[1])
-
+'''
 class ImgMultiSplitter(MultiSplitterWindow):
     def __init__(self, parent, orientaion,
                  size = wx.DefaultSize, style = wx.SP_LIVE_UPDATE):
         MultiSplitterWindow.__init__(self, parent, size = size, style = style)
         self.SetOrientation(orientaion)
-        self.Bind(wx.EVT_SIZE, self.OnSize)
-        self.Bind(wx.EVT_SPLITTER_SASH_POS_CHANGING, self.OnChanging)
-        self.Bind(wx.EVT_SPLITTER_SASH_POS_CHANGED, self.OnChanged)
 
     def Destroy(self):
         for child in self._windows: child.Destroy()
@@ -135,7 +73,6 @@ class ImgMultiSplitter(MultiSplitterWindow):
         newpos = evt.GetSashPosition()
         if 0 == newpos: newpos = 1
         #print oldpos, newpos
-        """
         if oldpos > newpos: # slide left or up
             targetsashpos = self.GetSashPosition(idx + 1)
             leftsashes = self._sashes[:idx + 1]
@@ -157,56 +94,90 @@ class ImgMultiSplitter(MultiSplitterWindow):
             for i, r in enumerate(ratio):
                 self.SetSashPosition(idx + 1 + i, int(newrightlen * r))
         self.SizeWindows()
-        """
+'''
 
-    def OnChanged(self, evt):
-        pub.sendMessage(PT.TPC_SIZE)
+class ImagePanel(wx.Panel):
+    def __init__(self, parent):
+        wx.Panel.__init__(self, parent)
+        self.bitmap = wx.StaticBitmap(parent)
+        self.imgpath = None
+        self.keepratio = False
+        self.Bind(wx.EVT_LEFT_DOWN, parent.OnSetSelection)
+        self.Bind(wx.EVT_RIGHT_DOWN, self.OnRightClick)
+        pub.subscribe(self.OnSize, PT.TPC_SIZE)
+        pub.subscribe(self.SetKeepratio, PT.TPC_KEEPRATIO)
 
-class ImgSchedulerPanel(wx.Panel):
+    def Destroy(self):
+        pub.unsubscribe(self.OnSize, PT.TPC_SIZE)
+        pub.unsubscribe(self.SetKeepratio, PT.TPC_KEEPRATIO)
+        wx.Panel.Destroy(self)
+
+    def SetImage(self, path):
+        self.imgpath = path
+        self.FitPanel()
+
+    def SetKeepratio(self, keepratio):
+        self.keepratio = keepratio
+        self.FitPanel()
+
+    def OnSize(self, evt = None):
+        self.FitPanel()
+
+    def FitPanel(self):
+        if self.imgpath: self.FitImage()
+        pub.sendMessage(PT.TPC_IMG_SIZE_CHANGED, id = self.GetId())
+
+    def FitImage(self):
+        size, scaledimg = imagelogics.Get_MaxScaledImg(self.imgpath,
+                                                       self.GetSize(),
+                                                       self.keepratio)
+        wximg = wx.EmptyImage(size[0], size[1])
+        wximg.SetData(scaledimg)
+        self.bitmap.SetBitmap(wximg.ConvertToBitmap())
+
+    def OnRightClick(self, evt):
+        # self.GetParent().SetSelection(evt.GetEventObject())
+        # This is very messy implementation because we cannot reconstruct menubar
+        # for each menubar open (EVT_MENU_OPEN event does not work on Unity).
+        menu = self.GetParent().GetParent().imgmenu
+        menubar = self.GetTopLevelParent().GetMenuBar()
+        for i, vals in enumerate(menubar.GetMenus()):
+            if menu == vals[0]: break
+        menubar.Remove(i)
+        self.PopupMenu(menu)
+        menubar.Insert(i, vals[0], vals[1])
+
+class ImagePerspective(aui.AuiNotebook):
     def __init__(self, parent, size = (760, 570)):
-        wx.Panel.__init__(self, parent, size = size)
-
-        self.vsplitter = vsplitter = ImgMultiSplitter(self, wx.VERTICAL, size = (720, 540))
-        hsplitter = ImgMultiSplitter(vsplitter, wx.HORIZONTAL)
-        vsplitter.AppendWindow(hsplitter, self.GetSize()[1])
-        imgmap = ImageBitmap(hsplitter, self)
-        hsplitter.AppendWindow(imgmap, vsplitter.GetSize()[0])
-        self.selectedpanel = imgmap
+        aui.AuiNotebook.__init__(self, parent, size = size)
+        self.ntab = 0
+        self.AddTab()
         self.Bind(wx.EVT_SIZE, self.OnSize)
 
-    def GetSelection(self):
-        return self.selectedpanel
+    def AddTab(self, direction = None):
+        self.ntab += 1
+        newpanel = ImagePanel(self)
+        self.AddPage(newpanel, "Tab{0}".format(self.ntab), True)
+        if direction:
+            idx = self.GetPageIndex(newpanel)
+            self.Split(idx, direction)
 
-    def SetSelection(self, selection):
-        self.selectedpanel = selection
+    def SetSelection(self, newselection):
+        aui.AuiNotebook.SetSelection(self, newselection)
         pub.sendMessage(PT.TPC_IMG_SEL_CHANGED)
 
     def OnSetSelection(self, evt):
         self.SetSelection(evt.GetEventObject())
 
-    def AddVertical(self):
-        hsplitter = ImgMultiSplitter(self.vsplitter, wx.HORIZONTAL)
-        imgmap = ImageBitmap(hsplitter, self)
-        hsplitter.AppendWindow(imgmap, self.vsplitter.GetSize()[0])
-        self.vsplitter.AddWindow(hsplitter)
-
-    def AddHorizontal(self):
-        if not self.selectedpanel: return
-        hsplitter = self.selectedpanel.GetParent()
-        imgmap = ImageBitmap(hsplitter, self)
-        hsplitter.AddWindow(imgmap)
-
-    def DeleteWindow(self, window):
-        if len(window.GetParent()._windows) == 1: return
-        window.GetParent().DeleteWindow(window)
-
-    def OnSize(self, evt):
-        self.vsplitter.FitParent()
-        for child in self.vsplitter._windows: child.FitParent()
-
-class ImageNotebook(aui.AuiNotebook):
+class ImageView(aui.AuiNotebook):
     def __init__(self, parent, size = (800, 600)):
-        aui.AuiNotebook.__init__(self, parent, size = size)
+        IMAGEVIEW_AGW_STYLE = (aui.AUI_NB_BOTTOM |
+                               aui.AUI_NB_TAB_MOVE |
+                               aui.AUI_NB_SCROLL_BUTTONS |
+                               aui.AUI_NB_CLOSE_ON_ALL_TABS |
+                               aui.AUI_NB_SMART_TABS)
+        aui.AuiNotebook.__init__(self, parent, size = size,
+                                 agwStyle = IMAGEVIEW_AGW_STYLE)
         self.imgmenu = ImageControlMenu(self)
         self.ntab = 0
         self.AddTab()
@@ -215,64 +186,61 @@ class ImageNotebook(aui.AuiNotebook):
 
     def AddTab(self):
         self.ntab += 1
-        self.AddPage(ImgSchedulerPanel(self), "tab{0}".format(self.ntab), True)
-
-    def GetActivePage(self):
-        activeidx = self.GetSelection()
-        if activeidx != -1: return self.GetPage(activeidx)
-        else: return None
+        self.AddPage(ImagePerspective(self), "Perspectiv{0}".format(self.ntab), True)
 
     def SetImage(self, path):
-        activepage = self.GetActivePage()
-        if activepage:
-            selection = activepage.GetSelection()
-            if selection:
-                selection.SetImage(path)
+        activeperspective = self.GetCurrentPage()
+        if activeperspective:
+            activepanel = activeperspective.GetCurrentPage()
+            if activepanel:
+                activepanel.SetImage(path)
                 pub.sendMessage(PT.TPC_IMG_SEL_CHANGED)
 
     def OnPageChanged(self, evt):
         pub.sendMessage(PT.TPC_IMG_SEL_CHANGED)
 
 class ImageControlMenu(wx.Menu):
-    def __init__(self, imgnotebook):
+    def __init__(self, imgview):
         wx.Menu.__init__(self)
-        self.imgnotebook = imgnotebook
+        self.imgview = imgview
 
-        addtabitem = wx.MenuItem(self, -1, 'Add new tab\tCtrl+T')
+        addtabitem = wx.MenuItem(self, -1, 'Add new Perspective\tCtrl+T')
         self.AppendItem(addtabitem)
         self.AppendSeparator()
         keepratio = self.Append(-1, 'Keep original ratio', kind = wx.ITEM_CHECK)
         self.AppendSeparator()
         splitvitem = self.Append(-1, "Split vertical")
         splithitem = self.Append(-1, "Split horizontal")
-        deleteitem = self.Append(-1, "Delete panel")
-        deleterowitem = self.Append(-1, "Delete Row")
+        deleteperspective = self.Append(-1, "Delete Perspective")
+        deletepanel = self.Append(-1, "Delete Panel")
 
         self.Bind(wx.EVT_MENU, self.OnAddTab, addtabitem)
         self.Bind(wx.EVT_MENU, self.SetKeepRatio, keepratio)
         self.Bind(wx.EVT_MENU, self.OnSplitVertical, splitvitem)
         self.Bind(wx.EVT_MENU, self.OnSplitHorizontal, splithitem)
-        self.Bind(wx.EVT_MENU, self.OnDelete, deleteitem)
-        self.Bind(wx.EVT_MENU, self.OnDeleteRow, deleterowitem)
+        self.Bind(wx.EVT_MENU, self.OnDeletePerSpective, deleteperspective)
+        self.Bind(wx.EVT_MENU, self.OnDeletePanel, deletepanel)
 
     def OnAddTab(self, evt):
-        self.imgnotebook.AddTab()
+        self.imgview.AddTab()
 
     def SetKeepRatio(self, evt):
         pub.sendMessage(PT.TPC_KEEPRATIO, keepratio = evt.IsChecked())
 
     def OnSplitVertical(self, evt):
-        activepage = self.imgnotebook.GetActivePage()
-        if activepage: activepage.AddVertical()
+        activeperspective = self.imgview.GetCurrentPage()
+        if activeperspective: activeperspective.AddTab(aui.AUI_NB_RIGHT)
 
     def OnSplitHorizontal(self, evt):
-        activepage = self.imgnotebook.GetActivePage()
-        if activepage: activepage.AddHorizontal()
+        activeperspective = self.imgview.GetCurrentPage()
+        if activeperspective: activeperspective.AddTab(aui.AUI_NB_BOTTOM)
 
-    def OnDelete(self, evt):
-        activepage = self.imgnotebook.GetActivePage()
-        if activepage: activepage.DeleteWindow(activepage.GetSelection())
+    def OnDeletePerSpective(self, evt):
+        activeperspective = self.imgview.GetCurrentPage()
+        if activeperspective: self.imgview.DeletePage(activeperspective)
 
-    def OnDeleteRow(self, evt):
-        activepage = self.imgnotebook.GetActivePage()
-        if activepage: activepage.DeleteWindow(activepage.GetSelection().GetParent())
+    def OnDeletePanel(self, evt):
+        activeperspective = self.imgview.GetCurrentPage()
+        if activeperspective:
+            activepanel = activepanel.GetCurrentPage()
+            if activepanel: activeperspective.DeletePage(activepanel)
