@@ -1,10 +1,12 @@
 #! /usr/bin/env python
 
-import os, sys, wx, wx.aui
+import os, sys, wx
 import imagelogics
+from eventconst import PT
+import wx.lib.agw.aui as aui
 from wx.lib.pubsub import pub
 from wx.lib.splitter import MultiSplitterWindow
-from eventconst import PT
+
 
 class ImageBitmap(wx.StaticBitmap):
     def __init__(self, parent, scheduler):
@@ -202,13 +204,13 @@ class ImgSchedulerPanel(wx.Panel):
         self.vsplitter.FitParent()
         for child in self.vsplitter._windows: child.FitParent()
 
-class ImageNotebook(wx.aui.AuiNotebook):
+class ImageNotebook(aui.AuiNotebook):
     def __init__(self, parent, size = (800, 600)):
-        wx.aui.AuiNotebook.__init__(self, parent, size = size)
+        aui.AuiNotebook.__init__(self, parent, size = size)
         self.imgmenu = ImageControlMenu(self)
         self.ntab = 0
         self.AddTab()
-        self.Bind(wx.aui.EVT_AUINOTEBOOK_PAGE_CHANGED, self.OnPageChanged)
+        self.Bind(aui.EVT_AUINOTEBOOK_PAGE_CHANGED, self.OnPageChanged)
         pub.subscribe(self.SetImage, PT.TPC_SRCTREE_SEL_CHANGED)
 
     def AddTab(self):
